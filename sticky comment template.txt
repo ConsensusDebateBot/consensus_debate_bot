@@ -1,0 +1,10 @@
+The consensus [view]({permalink}) of this thread, by (u/{author_name}) with {votes} votes, is:
+
+{body}
+
+---
+
+{chart}
+
+*Type !vote, !unvote, or !view to comment. The person with the most votes wins all.
+I am a bot, and this action was performed automatically. Please [contact the moderators of this subreddit](https://www.reddit.com/message/compose?to=%2Fr%2Fgouraritest) if you have any questions or concerns.*

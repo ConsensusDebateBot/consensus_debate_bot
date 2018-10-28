@@ -44,7 +44,7 @@ FLAIR_IGNORE = [
 	'Gourari'
 ]
 
-SLEEP_TIME = 3
+SLEEP_TIME = 10
 
 with open('sticky comment template.txt') as f:
 	STICKY_COMMENT_TEMPLATE = f.read().strip()

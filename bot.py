@@ -28,6 +28,8 @@ class Bot:
 		self.stream = PushshiftStream(reddit, subreddit_name, self.data._seen)
 		self.commands = Commands(**options)
 		self.comment_template = options.get('sticky_comment_template')
+		self.comment_template = self.comment_template.replace('{message_link}',
+		f'https://www.reddit.com/message/compose?to=%2Fr%2F{self.subreddit.display_name}')
 		self.user_flair_template = options.get('user_flair_text_template')
 		self.post_flair_template = options.get('post_flair_text_template')
 		self.pinned_check_duration = options.get('pinned_check_duration', 7)
@@ -35,6 +37,7 @@ class Bot:
 		self.chart_limit = options.get('chart_limit', 5)
 		self.character_limit = options.get('character_limit', 1000)
 		self.flair_ignore = options.get('flair_ignore')
+		self.sleep_time = options.get('sleep_time')
 		self._mods = self.subreddit.moderator()
 		self._mods_updated_at = time.time()
 		self._mods_refresh_rate = 6
@@ -56,6 +59,7 @@ class Bot:
 				thread.pinned_users = set()
 			return None
 		top_users = thread.top_users(sorted_users_list=sorted_users)
+		top_user = sorted(list(top_users), key=lambda u: u.get_comment().created_utc, reverse=True)[0]
 		view_comment = top_user.get_comment()
 		body = thread.get_body(self.comment_template, self.character_limit,
 							   self.chart_limit, top_user=top_user,
@@ -66,7 +70,10 @@ class Bot:
 			except AttributeError:
 				submission = view_comment
 			thread.sticky_comment = submission.reply(body)
-			thread.sticky_comment.mod.distinguish(how='yes', sticky=True)
+			try:
+			    thread.sticky_comment.mod.distinguish(how='yes', sticky=True)
+			except Exception:
+			    pass
 			for user in top_users:
 				user.pinned_at = now
 		elif thread.sticky_comment.body != body:
@@ -89,6 +96,8 @@ class Bot:
 			return None
 		voter_name = comment.author.name
 		parent_name = thread.parent(comment.parent_id)
+		if parent_name is None:
+			return None
 		voter = thread.user(voter_name)
 		prev_total = thread.total_voters
 		prev_casts = thread.casted_votes
@@ -137,40 +146,88 @@ class Bot:
 			thread.user(author_name).add_comment(comment, is_view=False)
 		self.update_sticky(thread)
 
-	def update_pinned_comments(self):
-		fullnames = self.data.fullnames(self.pinned_check_duration,
+	def retreived(self):
+		updated_p = []
+		updated_v = []
+		p_fullnames, v_fullnames = self.data.fullnames(
+										self.pinned_check_duration,
 										self.checks_per_day)
-		if fullnames:
-			to_update = []
-			for thing in self.reddit.info(fullnames):
-				if isinstance(thing, Comment):
-					submission = thing.submission
-					body = thing.body
-				else:
-					submission = thing
-					body = thing.selftext
-				thread = self.data.thread(submission)
+		if p_fullnames or v_fullnames:
+			updated = list(self.reddit.info(p_fullnames + v_fullnames))
+			updated_p = updated[:len(p_fullnames)]
+			updated_v = updated[len(p_fullnames):]
+		return(updated_p, updated_v)
+
+	def update_pinned(self, p_things):
+		_threads = set()
+		for thing in p_things:
+			if isinstance(thing, Comment):
+				submission = thing.submission
+				body = thing.body
+			else:
+				submission = thing
+				body = thing.selftext
+			thread = self.data.thread(submission)
+			if isinstance(thread.pasted, Comment):
+				pasted_body = thread.pasted.body
+			else:
+				pasted_body = thread.pasted.selftext
+			if pasted_body != body:
+				username = thread.pasted.author.name
+				user = thread.user(username)
 				if isinstance(thread.pasted, Comment):
-					pasted_body = thread.pasted.body
+					user.remove_comment(thread.pasted)
 				else:
-					pasted_body = thread.pasted.selftext
-				if pasted_body != body:
-					username = thread.pasted.author.name
-					user = thread.user(username)
-					if isinstance(thread.pasted, Comment):
-						user.remove_comment(thread.pasted)
+					user.submission = None
+				if not is_deleted(thing) and not thing.removed:
+					is_view = self.commands.is_valid('view', body)
+					if isinstance(thing, Comment):
+						user.add_comment(thing, is_view=is_view)
 					else:
-						user.submission = None
-					if not is_deleted(thing) and not thing.removed:
-						if isinstance(thing, Comment):
-							is_view = self.commands.is_valid('view', body)
-							user.add_comment(thing, is_view=is_view)
-						else:
-							user.submission = thing
-					to_update.append(thread)
-				thread.last_checked = time.time()
-			for thread in to_update:
-				self.update_sticky(thread)
+						thread.submission = thing
+						user.submission = thing
+						user.is_view = is_view
+						thread.is_view = is_view
+				_threads.add(thread)
+			thread.last_checked = time.time()
+		return _threads
+
+	def update_v(self, v_comments):
+		to_update_flair = set()
+		_threads = set()
+		for comment in v_comments:
+			thread = self.data.thread(comment.submission)
+			username = thread.ids_authors[comment.fullname]
+			user = thread.user(username)
+			for name, value_fullname in user.voted_for.items():
+				value, fullname = value_fullname
+				if fullname == comment.fullname:
+					break
+			if (is_deleted(comment) or
+					self.commands.is_valid('unvote', comment.body) or
+					not self.commands.is_valid('vote', comment.body)):
+				thread.update_votes(username, name, unvote=True)
+				_threads.add(thread)
+				to_update_flair.add(thread)
+			elif (self.commands.is_valid('vote', comment.body) and
+				  self.commands.percentage(comment.body, user.votes) is not None):
+				percentage = self.commands.percentage(comment.body, user.votes)
+				if percentage != value:
+					thread.update_votes(username, name, unvote=True)
+					thread.update_votes(username, name, value=percentage, fullname=comment.fullname)
+					_threads.add(thread)
+			thread.last_checked = time.time()
+		return (_threads, to_update_flair)
+
+	def update_all(self):
+		p_things, v_comments = self.retreived()
+		to_update_p = self.update_pinned(p_things)
+		to_update_v, to_update_flair = self.update_v(v_comments)
+		to_update = to_update_p | to_update_v
+		for thread in to_update:
+			self.update_sticky(thread)
+		for thread in to_update_flair:
+			self.update_post_flair(thread.submission, thread)
 
 	def update_users_flair(self, usernames):
 		mappings = []
@@ -184,12 +241,14 @@ class Bot:
 			self.subreddit.flair.update(mappings)
 
 	def main(self):
-		to_flair = set()
 		comments_stream = self.stream.comments()
 		while True:
+			to_flair = set()
 			for comment in comments_stream:
 				if comment is not None:
 					thread = self.data.thread(comment.submission)
+					if thread.submission is not None:
+						thread.is_view = self.commands.is_valid('view', thread.submission.selftext)
 					thread.ids_authors[comment.fullname] = comment.author.name
 				else:
 					break
@@ -205,6 +264,7 @@ class Bot:
 				self.comment_handler(comment)
 				to_flair.add(comment.author.name)
 			self.update_users_flair(to_flair)
-			self.update_pinned_comments()
+			self.update_all()
 			self.data.clean()
 			self.data.save(last_seen=self.stream._last_seen)
+			time.sleep(self.sleep_time * 60)

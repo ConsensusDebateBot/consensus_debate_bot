@@ -9,6 +9,8 @@ class PushshiftStream:
 	def __init__(self, reddit, subreddit_name, last_seen=None):
 		self.reddit = reddit
 		self.subreddit_name = subreddit_name
+		self._ids = []
+		self.link_id = []
 		self._url = 'https://api.pushshift.io/reddit/comment/search/'
 		self._last_req_time = 0
 		self._last_seen = last_seen or deque(maxlen=100)
@@ -18,6 +20,8 @@ class PushshiftStream:
 		else:
 			self._after = int(time.time())
 		self._params = {'subreddit': self.subreddit_name,
+		                'ids'      : self._ids,
+		                'link_id'  : self.link_id,
 						'size'     : self._size,
 						'after'    : self._after}
 
@@ -28,6 +32,9 @@ class PushshiftStream:
 				time.sleep(1 - diff)
 			req = self.reddit.get(self._url, params=self._params)
 			self._last_req_time = time.time()
+			for mention in self.reddit.inbox.mentions():
+			    self._ids.append(mention)
+			    self.link_id.append(mention.submission)
 			pushshift_comments = req['data']
 			new_praw_comments = []
 			for pushshift_comment in pushshift_comments:

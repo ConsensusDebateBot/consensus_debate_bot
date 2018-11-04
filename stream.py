@@ -33,8 +33,9 @@ class PushshiftStream:
 			req = self.reddit.get(self._url, params=self._params)
 			self._last_req_time = time.time()
 			for mention in self.reddit.inbox.mentions():
-			    self._ids.append(mention)
-			    self.link_id.append(mention.submission)
+			    if mention.subreddit != self.subreddit_name:
+			        self._ids.append(mention)
+			        self.link_id.append(mention.submission)
 			pushshift_comments = req['data']
 			new_praw_comments = []
 			for pushshift_comment in pushshift_comments:

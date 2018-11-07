@@ -1,6 +1,8 @@
 import time
 from collections import deque
 
+from thread import Thread
+
 from praw.models import Comment
 
 
@@ -30,13 +32,26 @@ class PushshiftStream:
 			diff = time.time() - self._last_req_time
 			if diff < 1:
 				time.sleep(1 - diff)
-			req = self.reddit.get(self._url, params=self._params)
+			try:
+			    req = self.reddit.get(self._url, params=self._params)
+			except Exception:
+			    pass
 			self._last_req_time = time.time()
 			for mention in self.reddit.inbox.mentions():
+			    botrepliedtothread = 0
 			    if mention.subreddit != self.subreddit_name:
-			        self._ids.append(mention)
-			        self.link_id.append(mention.submission)
-			pushshift_comments = req['data']
+			        tempmentionreq = self.reddit.get(self._url, params= {'link_id' : mention.submission})
+			        tempmentiondata = tempmentionreq['data']
+			        for tempreqcomment in tempmentiondata:
+			            if tempreqcomment['author'] == 'ConsensusDebateBot':
+			                botrepliedtothread += 1
+			        if botrepliedtothread > 0:
+			            continue
+			        else: self.link_id.append(mention.submission)
+			try:
+			    pushshift_comments = req['data']
+			except Exception:
+			    continue
 			new_praw_comments = []
 			for pushshift_comment in pushshift_comments:
 				comment = Comment(self.reddit, _data=pushshift_comment)

@@ -14,6 +14,7 @@ class PushshiftStream:
 		self.data = Data(save_rate=options.get('save_data_every', 10))
 		self.data.load()
 		self._url = 'https://api.pushshift.io/reddit/comment/search/'
+		self._reverse_url = 'https://api.pushshift.io/reddit/search/comment/'
 		self._link_id_url = 'https://api.pushshift.io/reddit/search/submission/'
 		self._comment_ids_url = 'https://api.pushshift.io/reddit/submission/comment_ids/'
 		self._last_req_time = 0
@@ -23,7 +24,7 @@ class PushshiftStream:
 			self._after = int(self._last_seen[-1].created_utc) - 1
 		else:
 			self._after = int(time.time())
-		self._params = {#'subreddit': self.subreddit_name,
+		self._params = {'subreddit': self.subreddit_name,
 						'size'     : self._size,
 						'after'    : self._after}
 
@@ -47,15 +48,18 @@ class PushshiftStream:
 				            thread.sticky_comment = botreqcomment
 			    except Exception:
 				    pass
-			mentionpostreq = self.reddit.get(self._url, params= {'q' : 'u/ConsensusDebateBot', 'after' : 1541786417})
+			mentionpostreq = self.reddit.get(self._url, params= {'q' : 'u/ConsensusDebateBot', 'size' : self._size, 'after' : self._after})
 			mentionpostdata = mentionpostreq['data']
 			for mentionpost in mentionpostdata:
 			    mentioncomment = Comment(self.reddit, _data=mentionpost)
-			    print(mentioncomment.submission)
-			    mentionpostcommentids = self.reddit.get(self._comment_ids_url, params= {'link_id' : mentioncomment.submission})
-			    mentionpostcomments = self.reddit.get(self._url, params= {'ids' : mentionpostcommentids})
-			    mention_comments.extend(mentionpostcomments)
-			    print(mentionpostcomments)
+			    mentionsubmission = str(mentioncomment.submission)
+			    mentionpostcommentidsreq = self.reddit.get(self._comment_ids_url + mentionsubmission)
+			    mentionpostcommentidsdata = mentionpostcommentidsreq['data']
+			    for mentionpostcommentidsdatacomment in mentionpostcommentidsdata:
+			        mentionpostcommentsreq = self.reddit.get(self._reverse_url, params= {'ids' : mentionpostcommentidsdatacomment})
+			        mentionpostcommentsdata = mentionpostcommentsreq['data']
+			    mention_comments.extend(mentionpostcommentsdata)
+			break
 			pushshift_comments = req['data']
 			pushshift_comments.extend(mention_comments)
 			final_pushshift_comments = []
@@ -63,6 +67,7 @@ class PushshiftStream:
 			    if pushshift_comment not in final_pushshift_comments:
 			        final_pushshift_comments.append(pushshift_comment)
 			pushshift_comments = final_pushshift_comments
+			print(pushshift_comments)
 			new_praw_comments = []
 			for pushshift_comment in pushshift_comments:
 				comment = Comment(self.reddit, _data=pushshift_comment)

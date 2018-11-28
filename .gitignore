@@ -1,0 +1,6 @@
+*.log
+*.pyc
+.idea/*
+local_configuration.py
+run_test.sh
+

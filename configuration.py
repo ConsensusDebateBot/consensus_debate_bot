@@ -46,3 +46,8 @@ FLAIR_IGNORE = [
 
 with open('sticky comment template.txt') as f:
 	STICKY_COMMENT_TEMPLATE = f.read().strip()
+
+try:
+    from local_configuration import *
+except ImportError:
+    pass

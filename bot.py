@@ -1,13 +1,14 @@
-import time
 import sys
+import time
 
-from praw.models import Submission, Comment
+from praw.models import Comment
 
-from data import Data
-from stream import PushshiftStream
 from commands import Commands
+from data import Data
 from helpers import is_deleted
-from .sentiment import Sentiment
+from sentiment import Sentiment
+from stream import PushshiftStream
+
 
 class Bot(object):
     @property
@@ -99,8 +100,7 @@ class Bot(object):
                 parent_name = thread.pasted.author.name
             else:
                 return None
-        print("[*] Comment: {}\n\nSentiments: {}", comment.body, self.sentiment.get_all_sentiments(comment.body),
-              file=sys.stderr)
+
         if (self.commands.is_valid('vote', comment.body) and
                 self.commands.percentage(comment.body, voter.votes) is not None and
                 parent_name != voter_name):
@@ -192,14 +192,18 @@ class Bot(object):
         comments_stream = self.stream.comments()
         while True:
             for comment in comments_stream:
-                if comment is not None:
-                    thread = self.data.thread(comment.submission)
-                    thread.ids_authors[comment.fullname] = comment.author.name
-                else:
+                if not comment or comment.author == self.me:
                     break
-                if comment.author == self.me:
-                    continue
-                elif (self.commands.is_valid('vote', comment.body) or
+
+                thread = self.data.thread(comment.submission)
+                thread.ids_authors[comment.fullname] = comment.author.name
+                sentiments = self.sentiment.get_sentiment(comment.body, condense=True)
+
+                # TODO: actually apply the results of the analysis to internal business logic
+                print("Comment: {}\n\nSentiment: {}".format(comment.body, sentiments),
+                      file=sys.stderr)
+
+                if (self.commands.is_valid('vote', comment.body) or
                       self.commands.is_valid('unvote', comment.body)):
                     self.vote_handler(comment)
                 elif (self.commands.is_valid('disablevote', comment.body) and

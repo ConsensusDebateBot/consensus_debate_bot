@@ -1,5 +1,5 @@
-# vim: set ft=rst:
+To set up (in a new venv):
 
-See https://help.pythonanywhere.com/ (or click the "Help" link at the top
-right) for help on how to use PythonAnywhere, including tips on copying and
-pasting from consoles, and writing your own web applications.
+pip install -r requirements.txt
+python -u -c 'import nltk; nltk.download("all")'
+
